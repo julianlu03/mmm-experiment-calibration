@@ -1,0 +1,110 @@
+version: 2
+
+models:
+  - name: int_state_week__spine
+    description: >
+      Every state x every Monday-start week in the modeling window (set by the
+      mmm_start_week / mmm_end_week vars). The complete grid the weekly models
+      join onto, so missing ad rows become $0 instead of missing weeks.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - state_code
+              - week_start
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "extract(dayofweek from week_start) = 2"  # BigQuery: Sunday = 1, Monday = 2
+    columns:
+      - name: state_code
+        data_tests:
+          - not_null
+      - name: week_start
+        description: Monday that starts the week.
+        data_tests:
+          - not_null
+
+  - name: int_ad_spend__daily_unioned
+    description: >
+      Google Ads (paid search, YouTube) and Meta (paid social) stacked into one
+      daily table, with state names mapped to state codes and each day assigned
+      to its Monday-start week.
+    columns:
+      - name: state_code
+        description: Null only for Google's unknown-geo rows.
+        data_tests:
+          - not_null:
+              config:
+                where: "not is_unknown_geo"
+      - name: channel
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['paid_search', 'paid_social', 'online_video']
+      - name: week_start
+        data_tests:
+          - not_null
+
+  - name: int_ad_spend__state_week
+    description: >
+      Weekly spend by state with one column per channel. Zero-filled from the
+      spine, so search shows $0 (not missing) in treated states during the
+      geo test, and video shows $0 between flights. Unknown-geo spend excluded.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - state_code
+              - week_start
+    columns:
+      - name: spend_paid_search
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: spend_paid_social
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: spend_online_video
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+
+  - name: int_sales__state_week
+    description: >
+      Weekly sales by state from Shopify dataset. 
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - state_code
+              - week_start
+    columns:
+      - name: net_sales
+        data_tests:
+          - not_null
+
+  - name: int_promo__week
+    description: >
+      Share of each week's days that fall inside a national promo (0 to 1).
+      Used as a control variable in the MMM so promo lifts aren't credited to media.
+    columns:
+      - name: week_start
+        data_tests:
+          - unique
+          - not_null
+      - name: promo_share
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+

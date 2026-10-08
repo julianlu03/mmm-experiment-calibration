@@ -1,0 +1,12 @@
+# Generated data: reproducible with `python simulate.py`
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# dbt
+target/
+dbt_packages/
+logs/

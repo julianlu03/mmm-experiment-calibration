@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_meta_ads__region_daily
+    description: >
+      Meta Ads geographic report with spend in dollars
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - date_day
+              - campaign_id
+              - state_name
+    columns:
+      - name: date_day
+        description: Report date.
+        data_tests:
+          - not_null
+      - name: campaign_id
+        data_tests:
+          - not_null
+      - name: state_name
+        description: Full US state name.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: source('mmm_raw', 'census_state_population')
+                field: state_name
+      - name: channel
+        description: Paid social for all Meta ads. 
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['paid_social']
+      - name: spend
+        description: Media cost in USD.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: platform_conversion_value
+        description: Revenue Meta Ads claims credit for (attribution). Inflated relative to true incremental revenue.
+

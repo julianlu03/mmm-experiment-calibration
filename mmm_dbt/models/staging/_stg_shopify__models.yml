@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: stg_shopify__sales_daily
+    description: >
+      Shopify report of orders and sales total per region per day
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - date_day
+              - state_code
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "net_sales <= gross_sales"
+    columns:
+      - name: date_day
+        description: Report date.
+        data_tests:
+          - not_null
+      - name: state_code
+        description: Abbreviation of state name (unlike other sources which are full state name). Null when the order had no billing region.
+        data_tests:
+          - relationships:
+              arguments:
+                to: source('mmm_raw', 'census_state_population')
+                field: state_code
+      - name: is_unknown_geo
+        description: True if Shopify couldn't attribute to a state. Excluded from the state-level mart.
+        data_tests:
+          - not_null
+      - name: discounts
+        description: Discounts in USD.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: returns
+        description: Returns in USD
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: gross_sales
+        description: Gross sales in USD. Not including returns/discounts
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: taxes
+        description: Taxes in USD.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: total_sales
+        description: Net sales plus shipping and taxes. Not the KPI.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: net_sales
+        description: The KPI. gross_sales + discounts + returns. Excludes shipping and taxes. USD.
+        data_tests:
+          - not_null
+
+
+

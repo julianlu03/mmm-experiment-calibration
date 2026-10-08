@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: stg_google_ads__geo_daily
+    description: >
+      Google Ads geographic report with spend in dollars, state names cleaned,
+      campaigns mapped to channels, and duplicate rows from overlapping
+      exports removed. Zero-spend days are absent (Google doesn't export them);
+      the intermediate layer fills them with $0.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - date_day
+              - campaign_id
+              - state_name
+    columns:
+      - name: date_day
+        description: Report date.
+        data_tests:
+          - not_null
+      - name: campaign_id
+        data_tests:
+          - not_null
+      - name: state_name
+        description: Full US state name. Null when Google couldn't locate the user (see is_unknown_geo).
+        data_tests:
+          - relationships:
+              arguments:
+                to: source('mmm_raw', 'census_state_population')
+                field: state_name
+      - name: is_unknown_geo
+        description: True for spend Google couldn't attribute to a state. Excluded from the state-level mart.
+        data_tests:
+          - not_null
+      - name: channel
+        description: paid_search (SEARCH campaigns) or online_video (YouTube VIDEO campaigns).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['paid_search', 'online_video']
+      - name: spend
+        description: Media cost in USD.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: platform_conversion_value
+        description: Revenue Google Ads claims credit for (attribution). Inflated relative to true incremental revenue.

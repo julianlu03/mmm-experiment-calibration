@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: stg_census__state_population
+    description: >
+      The 50 US states with 2020 Census population. Downstream models join
+      here to map state names to codes and to scale metrics per capita.
+    columns:
+      - name: state_code
+        data_tests:
+          - unique
+          - not_null
+      - name: state_name
+        data_tests:
+          - unique
+          - not_null
+      - name: census_region
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Northeast', 'Midwest', 'South', 'West']
+      - name: population
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: false

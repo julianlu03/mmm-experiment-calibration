@@ -1,0 +1,31 @@
+version: 2
+
+sources:
+  - name: mmm_raw
+    description: >
+      Raw platform exports, landed as-is by load_to_bigquery.py (column names
+      snake_cased, values untouched). Only staging models read from here;
+      everything downstream uses ref() on a staging model instead.
+    schema: mmm_raw
+    tables:
+      - name: google_ads_geo_daily
+        description: Google Ads geographic report. One row per day x campaign x state. Covers paid search and YouTube.
+      - name: meta_ads_region_daily
+        description: Meta Ads Manager export. One row per day x campaign x region (US state).
+      - name: shopify_sales_daily
+        description: Shopify daily sales summary by billing region (state code).
+      - name: promo_calendar
+        description: Marketing team's promo calendar, exported from a Google Sheet. Dates are MM/DD/YYYY strings.
+      - name: geo_experiment_design
+        description: Geo holdout design. One row per state with test group and test dates.
+      - name: census_state_population
+        description: 2020 Census state populations. The reference list of valid states and the denominator for per-capita metrics.
+        columns:
+          - name: state_code
+            data_tests:
+              - unique
+              - not_null
+          - name: state_name
+            data_tests:
+              - unique
+              - not_null

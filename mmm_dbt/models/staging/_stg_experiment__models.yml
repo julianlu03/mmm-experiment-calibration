@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: stg_experiment__geo_design
+    description: >
+      Geo holdout design: which states paused which channel, and when. One row
+      per state. Treated states paused paid search for the test window; control
+      states ran as usual and serve as the comparison group (DiD) or donor
+      pool (synthetic control).
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            # treated states must name a paused channel; control states must not
+            expression: "(is_treated and channel_paused is not null) or (not is_treated and channel_paused is null)"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "test_end_date >= test_start_date"
+    columns:
+      - name: state_code
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: source('mmm_raw', 'census_state_population')
+                field: state_code
+      - name: test_group
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['treatment', 'control']
+      - name: is_treated
+        description: True for the treatment group.
+        data_tests:
+          - not_null
+      - name: channel_paused
+        description: Channel switched off in treated states during the test. Null for control states.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid_search']
+      - name: test_start_date
+        description: First day of the test window (inclusive).
+        data_tests:
+          - not_null
+      - name: test_end_date
+        description: Last day of the test window (inclusive).
+        data_tests:
+          - not_null

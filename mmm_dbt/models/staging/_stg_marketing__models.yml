@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: stg_marketing__promo_calendar
+    description: >
+      Promo calendar with dates parsed from MM/DD/YYYY strings. Each promo runs
+      from start_date through end_date inclusive. Used to build the weekly
+      promo control (share of days on promo) for the MMM.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - promo_name
+              - start_date
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "end_date >= start_date"
+    columns:
+      - name: promo_name
+        data_tests:
+          - not_null
+      - name: start_date
+        description: First day of the promo (inclusive).
+        data_tests:
+          - not_null
+      - name: end_date
+        description: Last day of the promo (inclusive).
+        data_tests:
+          - not_null
+      - name: promo_length_days
+        description: Number of promo days, counting both start and end dates.
+      - name: discount_pct
+        description: Headline discount, in percent (e.g. 30 = 30% off).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100

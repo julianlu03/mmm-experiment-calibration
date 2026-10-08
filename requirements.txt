@@ -1,0 +1,13 @@
+# Day 1: simulator + BigQuery load
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+pyarrow>=14
+google-cloud-bigquery>=3.17
+db-dtypes>=1.2
+
+# Day 2 (install when you get there)
+dbt-bigquery>=1.8
+
+# Day 3 (install when you get there; check Meridian's docs for the supported Python range)
+# google-meridian
