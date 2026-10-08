@@ -1,6 +1,6 @@
 # MMM vs. Experiment: Calibrating a Marketing Mix Model with a Geo Holdout
 
-**Status:** Day 1 of 5 complete (simulator, raw exports, BigQuery load).
+**Status:** Days 1 and 2 of 5 complete (simulator, BigQuery load, dbt pipeline). Modeling in progress.
 
 Marketing mix models can be confidently wrong, and with real data you never find out,
 because the true channel ROIs are unknown. This project builds a simulated DTC e-commerce
@@ -97,18 +97,52 @@ raw tables first.
 Ground truth goes to `data/truth/` and the `mmm_truth` BigQuery dataset, used only for
 evaluation.
 
+## dbt pipeline (BigQuery)
+
+![dbt lineage graph](docs/lineage.png)
+
+Thirteen models in three layers turn the raw exports into two tested marts:
+
+| Layer | Models | What happens |
+|---|---|---|
+| Staging (views) | 6, one per source | Cast dates, convert Google's micros to dollars, dedupe a re-pulled week, standardize column names, label channels, compute net sales (gross + discounts + returns), flag rows with no state instead of dropping them |
+| Intermediate (views) | 5 | A state x Monday-week grid; Google and Meta stacked into one daily table; spend, sales, and promo days rolled up to weeks and zero-filled from the grid, so the search pause shows as $0 rather than missing weeks |
+| Marts (tables) | 2 | `mart_mmm__state_week`: 7,800 rows of KPI, spend by channel, promo share, and experiment flags (contract-enforced; read by Meridian). `mart_platform__channel_performance`: platform-reported ROAS by channel and week |
+
+About 100 tests guard the pipeline, including three custom ones on the MMM mart: exact row
+count, totals that reconcile to staging within a cent, and $0 search spend wherever the
+experiment design says search was paused. In production I'd start the ad-platform staging
+layer from Fivetran's `ad_reporting` package; here it's written by hand because the
+exports don't follow Fivetran's schemas.
+
 ## Running it
 
-```bash
-python3.11 -m venv .venv && source .venv/bin/activate
+Windows PowerShell (on macOS/Linux, use `python3.11 -m venv .venv` and `source .venv/bin/activate`):
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
 python simulate.py              # writes data/raw and data/truth (seed 42, ~1 second)
 python validate_simulation.py   # writes validation_report.md (~10 seconds)
 
+# One-time: credentials for Python libraries (separate from `gcloud init`)
 gcloud auth application-default login
-python load_to_bigquery.py --project YOUR_GCP_PROJECT --dry-run
+gcloud auth application-default set-quota-project YOUR_GCP_PROJECT
+
+python load_to_bigquery.py --project YOUR_GCP_PROJECT --dry-run   # local only, no BigQuery calls
 python load_to_bigquery.py --project YOUR_GCP_PROJECT
+```
+
+Then build and test the dbt project (connection set up with `dbt init`, oauth method):
+
+```powershell
+cd mmm_dbt
+dbt deps
+dbt build              # all models and tests
+dbt docs generate      # docs site + lineage graph
+dbt docs serve
 ```
 
 BigQuery sandbox notes: tables expire after 60 days (rerun the loader, everything is
@@ -124,11 +158,17 @@ validate_simulation.py     checks the failure modes exist
 load_to_bigquery.py        lands raw + truth tables in BigQuery
 validation_report.md       output of the validation script
 docs/known_data_issues.md  planted data quality issues (spoilers)
+docs/lineage.png           dbt lineage graph
+mmm_dbt/
+  models/staging/          one cleaned view per raw source
+  models/intermediate/     weekly rollups on a state x week grid
+  models/marts/            MMM input table + platform performance table
+  tests/                   custom tests (row count, reconciliation, experiment check)
 ```
 
 ## Roadmap
 
-- **Day 2:** dbt project: staging, intermediate, and a state x week mart, with tests and docs
+- **Day 2 (done):** dbt project: staging, intermediate, and marts, with tests and docs
 - **Day 3:** Meridian v1 (uncalibrated): convergence checks, ROI recovery vs. truth
 - **Day 4:** DiD and synthetic control on the holdout; Meridian v2 with the experiment as a search ROI prior
 - **Day 5:** Tableau (ROI recovery, experiment lift, budget reallocation) and the write-up
