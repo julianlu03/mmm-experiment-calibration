@@ -1,12 +1,17 @@
-# Generated data: reproducible with `python simulate.py`
+# Generated data (rebuild with simulate.py; includes the truth files)
 data/
 
-# Python
-__pycache__/
-*.pyc
+# Virtual environments
 .venv/
+.venv-meridian/
 
-# dbt
+# Python cache
+__pycache__/
+
+# dbt build artifacts
 target/
 dbt_packages/
 logs/
+
+# Fitted Meridian models (21 MB; rebuild with fit_meridian_v1.py)
+outputs/*.binpb

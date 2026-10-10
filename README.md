@@ -1,6 +1,6 @@
 # MMM vs. Experiment: Calibrating a Marketing Mix Model with a Geo Holdout
 
-**Status:** Days 1 and 2 of 5 complete (simulator, BigQuery load, dbt pipeline). Modeling in progress.
+**Status:** Days 1 to 3 of 5 complete (simulator, BigQuery load, dbt pipeline, uncalibrated Meridian MMM). Geo experiment and calibration next.
 
 Marketing mix models can be confidently wrong, and with real data you never find out,
 because the true channel ROIs are unknown. This project builds a simulated DTC e-commerce
@@ -115,6 +115,46 @@ experiment design says search was paused. In production I'd start the ad-platfor
 layer from Fivetran's `ad_reporting` package; here it's written by hand because the
 exports don't follow Fivetran's schemas.
 
+## Meridian v1: the uncalibrated MMM
+
+Google Meridian 2.1, geo-level, fit on `mart_mmm__state_week` (50 states x 156 weeks).
+KPI is net sales, so ROI is in dollars per dollar. The exports have no impressions, so
+spend is both the media input and the ROI denominator. Priors are Meridian's defaults:
+the same ROI prior for every channel (LogNormal(0.2, 0.9), median 1.22, 90% range
+0.28 to 5.37), up to 8 weeks of adstock, and one time effect per week. Sampling: 4 chains,
+each with 2,000 adaptation, 1,000 burn-in, and 1,000 kept draws (about 25 minutes on a laptop CPU).
+
+**Key decision: no promo control.** Promotions are national, so `promo_share` is
+identical across states in any given week and perfectly collinear with the weekly time
+effects (Meridian refuses to fit with it). The time effects absorb promos and
+seasonality instead. The experiment flags are not used in v1.
+
+| Channel | True ROI | Meridian v1 (90% credible interval) | Error | Interval covers truth? |
+|---|---|---|---|---|
+| Paid search | 1.80 | 2.45 (2.24 to 2.68) | +36% | **No** |
+| Paid social | 1.40 | 1.79 (1.36 to 2.35) | +28% | Yes, barely |
+| Online video | 0.80 | 0.95 (0.64 to 1.35) | +19% | Yes |
+
+- **Paid search is confidently wrong.** The whole interval sits above the truth. This is
+  the endogeneity failure: nothing in the data tracks the hidden demand that drives both
+  search spend and sales, so more data or longer sampling cannot fix it.
+- **Social and video are high too,** although neither follows demand. That is consistent
+  with the shared default prior (mean 1.83) pulling weakly identified channels upward;
+  [`outputs/roi_vs_truth.csv`](outputs/roi_vs_truth.csv) shows each posterior next to its prior mean.
+- **Video is the costly miss.** It truly loses money (0.80), but v1's interval runs up to
+  1.35, so v1 alone would not tell you to cut it.
+- **Fit is not attribution.** In-sample R² is 0.997 by state and national MAPE is 0.8%.
+  The model tracks sales almost perfectly while misallocating credit between channels.
+
+**Convergence.** All media parameters converged (R-hat ≤ 1.02, except 1 of 150
+state-level coefficients at 1.11). The weekly time effects did not fully converge
+(R-hat 1.23): with one effect per week, the baseline level is weakly identified against
+the state intercepts. Per-chain ROI estimates agree within 0.03 (search) to 0.10 (social),
+small next to the 90% intervals, so the channel conclusions do not depend on it.
+Longer sampling (2,500 to 4,000 steps per chain) reduced the time-effect R-hat from 1.36
+to 1.23 and moved no ROI by more than 0.04. I stopped there rather than tighten priors until the
+diagnostic passed.
+
 ## Running it
 
 Windows PowerShell (on macOS/Linux, use `python3.11 -m venv .venv` and `source .venv/bin/activate`):
@@ -145,6 +185,19 @@ dbt docs generate      # docs site + lineage graph
 dbt docs serve
 ```
 
+Meridian runs in its own virtual environment because its TensorFlow and JAX pins can
+conflict with dbt's dependencies. Export `mmm_dbt.mart_mmm__state_week` from BigQuery to
+`data/mart_mmm__state_week.csv` first, then, from the project root:
+
+```powershell
+py -3.11 -m venv .venv-meridian
+.venv-meridian\Scripts\Activate.ps1
+pip install -r requirements-meridian.txt
+
+python meridian/fit_meridian_v1.py     # about 25 min on a laptop CPU; writes outputs/
+python meridian/compare_to_truth.py    # writes outputs/roi_vs_truth.csv
+```
+
 BigQuery sandbox notes: tables expire after 60 days (rerun the loader, everything is
 seeded), and DML isn't supported, so dbt models should be `table` or `view`, not
 `incremental`.
@@ -159,6 +212,11 @@ load_to_bigquery.py        lands raw + truth tables in BigQuery
 validation_report.md       output of the validation script
 docs/known_data_issues.md  planted data quality issues (spoilers)
 docs/lineage.png           dbt lineage graph
+requirements-meridian.txt  pinned packages for the Meridian environment
+meridian/
+  fit_meridian_v1.py       uncalibrated Meridian fit, diagnostics, ROI summary
+  compare_to_truth.py      ROI estimates vs ground truth (the only modeling script that reads truth)
+outputs/                   ROI summaries and truth comparison (fitted model files are git-ignored)
 mmm_dbt/
   models/staging/          one cleaned view per raw source
   models/intermediate/     weekly rollups on a state x week grid
@@ -169,6 +227,6 @@ mmm_dbt/
 ## Roadmap
 
 - **Day 2 (done):** dbt project: staging, intermediate, and marts, with tests and docs
-- **Day 3:** Meridian v1 (uncalibrated): convergence checks, ROI recovery vs. truth
+- **Day 3 (done):** Meridian v1 (uncalibrated): convergence checks, ROI recovery vs. truth
 - **Day 4:** DiD and synthetic control on the holdout; Meridian v2 with the experiment as a search ROI prior
 - **Day 5:** Tableau (ROI recovery, experiment lift, budget reallocation) and the write-up
