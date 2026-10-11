@@ -5,7 +5,7 @@ kept moving together without the pause; this script checks that assumption.
 
 Run from the project root with .venv-meridian active (it already has
 statsmodels and matplotlib):
-    python experiment/pre_trend_check.py
+    python experiments/pre_trend_check.py
 
 Reads:  data/mart_mmm__state_week.csv
 Writes: outputs/figures/pre_trend.png
