@@ -1,6 +1,6 @@
 # MMM vs. Experiment: Calibrating a Marketing Mix Model with a Geo Holdout
 
-**Status:** Days 1 to 3 of 5 complete (simulator, BigQuery load, dbt pipeline, uncalibrated Meridian MMM). Geo experiment and calibration next.
+**Status:** Days 1 to 4 of 5 complete (simulator, BigQuery load, dbt pipeline, uncalibrated Meridian MMM, geo experiment analysis, calibrated MMM). Tableau and final write-up next.
 
 Marketing mix models can be confidently wrong, and with real data you never find out,
 because the true channel ROIs are unknown. This project builds a simulated DTC e-commerce
@@ -155,6 +155,99 @@ Longer sampling (2,500 to 4,000 steps per chain) reduced the time-effect R-hat f
 to 1.23 and moved no ROI by more than 0.04. I stopped there rather than tighten priors until the
 diagnostic passed.
 
+## Day 4: the geo experiment and calibration
+
+Paid search is the channel whose spend follows hidden demand, so Meridian v1 overstates it.
+A geo experiment avoids that: from 2024-06-03 to 2024-07-28, paid search was paused in 10
+states. Because the pause was set by design rather than by demand, the sales lost in those
+states measure what search actually adds. The catch is how the test states were chosen:
+from a list of fast-growing "growth markets", so they were already outgrowing the rest of
+the country.
+
+### Parallel trends fails before the test
+
+![Pre-trend check](outputs/figures/pre_trend.png)
+
+The log ratio of treated to control sales per capita cancels shared seasonality and
+promos, leaving the gap between the groups. Before the test, treated states grew
+**0.074% per week faster** than controls over 52 weeks (p < 0.001; HAC standard errors).
+Over 26 weeks the gap is 0.089% per week but only borderline significant (p = 0.049): with
+a little more noise, a standard test would have called these trends parallel. Failing to
+reject is not evidence of parallel trends.
+
+### DiD vs synthetic control
+
+![Synthetic control](outputs/figures/synthetic_control.png)
+
+| Estimator | Lost revenue (90% CI) | iROAS (90% CI) | vs. truth |
+|---|---|---|---|
+| **Truth** | $1.54M | 1.77 | |
+| DiD, 26-week pre-period | $1.34M ($1.02M to $1.68M) | 1.55 (1.17 to 1.93) | −13% |
+| DiD, 52-week pre-period | $1.18M ($0.85M to $1.52M) | 1.36 (0.98 to 1.74) | −23%, interval misses truth |
+| Synthetic control, 26-week fit | $1.51M ($1.17M to $1.84M) | 1.73 (1.35 to 2.12) | −2% |
+| **Synthetic control, 52-week fit** | **$1.51M ($1.18M to $1.84M)** | **1.74 (1.36 to 2.12)** | **−2%** |
+
+- **DiD** is a population-weighted two-way fixed effects regression on log sales per
+  capita, with standard errors clustered by state. It understates the loss because the
+  treated states' faster growth gets read as "the pause didn't hurt much", and a longer
+  pre-period makes it worse.
+- **Synthetic control** builds a weighted blend of the 40 control states (weights ≥ 0,
+  summing to 1, solved with SLSQP) that tracks the treated states for 52 weeks before the
+  test (fit error 0.67%; 18 states carry more than 1% weight). Intervals come from a
+  placebo test: 200 random groups of 10 control states, where nothing happened, give a
+  fake-lift SD of 1.1% of sales. The fake lifts average −0.6%, a slight downward tilt
+  that I report rather than correct.
+- **Same precision, different bias.** Both methods have intervals about ±0.38 wide. DiD's
+  is centered in the wrong place.
+- **iROAS denominator.** Spend that the pause withheld is unobserved, so it is estimated
+  as the treated states' pre-test share of search spend times the control states' actual
+  spend during the test ($869k). A pre-test run rate would miss the summer increase. In
+  practice, the planned media budget for the paused campaigns is the better denominator.
+- **Specification choices were made by estimand, not by distance to the truth.** An
+  unweighted DiD lands closer to the truth here, but only because the fastest-growing
+  treated states happen to be the large ones. Lost revenue is a dollar total, so the
+  population-weighted version is the right target.
+
+### Meridian v2: calibrated with the experiment
+
+v2 is v1 with one change: the paid search ROI prior. Synthetic control's iROAS (mean 1.74,
+SD 0.23) becomes LogNormal(0.545, 0.131), applied through Meridian's `roi_calibration` to
+media run during the test window, which is what the experiment measured. Social and video
+keep the default prior. Same data, spec, and sampler settings as v1.
+
+| Channel | True ROI | v1 (90% CI) | v2 (90% CI) | v2 error |
+|---|---|---|---|---|
+| Paid search | 1.80 | 2.45 (2.24 to 2.68) | **2.33 (2.14 to 2.53)** | +30% (v1: +36%) |
+| Paid social | 1.40 | 1.79 (1.36 to 2.35) | 1.79 (1.36 to 2.36) | +28% |
+| Online video | 0.80 | 0.95 (0.64 to 1.35) | 0.95 (0.64 to 1.33) | +19% |
+
+- **Calibration helps, but only partly.** It closes about 18% of the gap for search, and the
+  interval still excludes the truth. Social and video do not move, as expected.
+- **The data overpowered the prior.** The calibrated parameter itself (search ROI for the
+  test window) went from the experiment's 1.74 to a posterior of 2.21. Bayesian updating
+  cannot tell that the observational data is biased: three years of "search spend up,
+  sales up" is precise, so it outweighs one 8-week test.
+- **That conflict is a usable alarm.** A posterior about 2 SDs from its experimental prior
+  means the MMM's data disagrees with a clean experiment, which is what endogeneity looks
+  like. With real data you never see the truth, but you can always see this gap.
+- **Not done on purpose:** tightening the prior until v2 matched 1.80. That would be tuning
+  to an answer no real analyst has.
+- Convergence improved: all media parameters and state intercepts have R-hat < 1.1; the
+  weekly time effects are at 1.16 (v1: 1.23) and ROI agrees across chains within 0.02.
+  The 80 experiment state-weeks also sit in the MMM's training data, so that information
+  is used twice; at 1% of rows, the effect is small.
+
+### So what
+
+1. **Run geo experiments, starting with the channels most likely to follow demand.** A
+   well-analyzed test recovered search iROAS within 2%, where the MMM was off by 36%.
+2. **Check parallel trends before trusting DiD.** When test markets are chosen by
+   convenience, synthetic control is the safer default.
+3. **One short test only partly corrects a confounded MMM.** Repeated or longer tests
+   tighten the prior legitimately; until then, use the experiment rather than the MMM for
+   search budget decisions.
+4. **Treat prior/posterior conflict as a diagnostic,** not something to tune away.
+
 ## Running it
 
 Windows PowerShell (on macOS/Linux, use `python3.11 -m venv .venv` and `source .venv/bin/activate`):
@@ -195,6 +288,13 @@ py -3.11 -m venv .venv-meridian
 pip install -r requirements-meridian.txt
 
 python meridian/fit_meridian_v1.py     # about 25 min on a laptop CPU; writes outputs/
+
+python experiments/pre_trend_check.py  # parallel-trends diagnostic and figure
+python experiments/did.py              # difference-in-differences
+python experiments/synthetic_control.py  # synthetic control with placebo intervals
+python experiments/iroas.py            # withheld spend and iROAS for every estimator
+
+python meridian/fit_meridian_v2.py     # calibrated fit, about 25 min
 python meridian/compare_to_truth.py    # writes outputs/roi_vs_truth.csv
 ```
 
@@ -213,10 +313,17 @@ validation_report.md       output of the validation script
 docs/known_data_issues.md  planted data quality issues (spoilers)
 docs/lineage.png           dbt lineage graph
 requirements-meridian.txt  pinned packages for the Meridian environment
+experiments/
+  pre_trend_check.py       parallel-trends diagnostic
+  did.py                   difference-in-differences
+  synthetic_control.py     synthetic control with placebo intervals
+  iroas.py                 withheld spend and iROAS
 meridian/
   fit_meridian_v1.py       uncalibrated Meridian fit, diagnostics, ROI summary
+  fit_meridian_v2.py       Meridian calibrated with the experiment (search ROI prior)
   compare_to_truth.py      ROI estimates vs ground truth (the only modeling script that reads truth)
-outputs/                   ROI summaries and truth comparison (fitted model files are git-ignored)
+outputs/                   experiment estimates, ROI summaries, truth comparison, figures
+                           (fitted model files are git-ignored)
 mmm_dbt/
   models/staging/          one cleaned view per raw source
   models/intermediate/     weekly rollups on a state x week grid
@@ -228,5 +335,5 @@ mmm_dbt/
 
 - **Day 2 (done):** dbt project: staging, intermediate, and marts, with tests and docs
 - **Day 3 (done):** Meridian v1 (uncalibrated): convergence checks, ROI recovery vs. truth
-- **Day 4:** DiD and synthetic control on the holdout; Meridian v2 with the experiment as a search ROI prior
+- **Day 4 (done):** DiD and synthetic control on the holdout; Meridian v2 with the experiment as a search ROI prior
 - **Day 5:** Tableau (ROI recovery, experiment lift, budget reallocation) and the write-up
