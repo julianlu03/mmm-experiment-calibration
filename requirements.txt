@@ -11,3 +11,7 @@ dbt-bigquery>=1.8
 
 # Day 3 (install when you get there; check Meridian's docs for the supported Python range)
 # google-meridian
+
+# Day 4
+statsmodels>=0.14
+matplotlib>=3.8
