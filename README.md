@@ -1,7 +1,5 @@
 # MMM vs. Experiment: Calibrating a Marketing Mix Model with a Geo Holdout
 
-**Status:** Days 1 to 4 of 5 complete (simulator, BigQuery load, dbt pipeline, uncalibrated Meridian MMM, geo experiment analysis, calibrated MMM). Tableau and final write-up next.
-
 Marketing mix models can be confidently wrong, and with real data you never find out,
 because the true channel ROIs are unknown. This project builds a simulated DTC e-commerce
 brand where the truth is known, plants two realistic failure modes, and tests whether a
@@ -155,7 +153,7 @@ Longer sampling (2,500 to 4,000 steps per chain) reduced the time-effect R-hat f
 to 1.23 and moved no ROI by more than 0.04. I stopped there rather than tighten priors until the
 diagnostic passed.
 
-## Day 4: the geo experiment and calibration
+## The geo experiment and calibration
 
 Paid search is the channel whose spend follows hidden demand, so Meridian v1 overstates it.
 A geo experiment avoids that: from 2024-06-03 to 2024-07-28, paid search was paused in 10
@@ -331,9 +329,3 @@ mmm_dbt/
   tests/                   custom tests (row count, reconciliation, experiment check)
 ```
 
-## Roadmap
-
-- **Day 2 (done):** dbt project: staging, intermediate, and marts, with tests and docs
-- **Day 3 (done):** Meridian v1 (uncalibrated): convergence checks, ROI recovery vs. truth
-- **Day 4 (done):** DiD and synthetic control on the holdout; Meridian v2 with the experiment as a search ROI prior
-- **Day 5:** Tableau (ROI recovery, experiment lift, budget reallocation) and the write-up
